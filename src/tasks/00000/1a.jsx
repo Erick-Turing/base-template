@@ -7,6 +7,7 @@ const FruitSelector = () => {
 
   return (
     <div className="flex justify-center items-center h-screen">
+      
       <Card className="w-[350px]">
         <CardHeader>
           <CardTitle>Fruit Selector 1a</CardTitle>
