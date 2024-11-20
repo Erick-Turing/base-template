@@ -19,6 +19,7 @@ const FruitSelector = () => {
               <SelectValue placeholder="Select a fruit" />
             </SelectTrigger>
             <SelectContent>
+              
               <SelectItem value="Apple">Apple</SelectItem>
               <SelectItem value="Banana">Banana</SelectItem>
               <SelectItem value="Strawberry">Strawberry</SelectItem>
