@@ -49,7 +49,7 @@ const InteractiveAnimation = () => {
 };
 
 // Main article component
-export default App = () => {
+const App = () => {
   const [activeTab, setActiveTab] = useState("intro");
 
   const sampleData = [
@@ -169,3 +169,5 @@ export default App = () => {
     </div>
   );
 };
+
+export default App;

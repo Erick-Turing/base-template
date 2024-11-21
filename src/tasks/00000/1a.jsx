@@ -86,4 +86,4 @@ const GameCanvas = () => {
   );
 };
 
-export default FruitSelector;
+export default GameCanvas;
