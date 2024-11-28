@@ -1,166 +1,140 @@
-import React, { useState, useEffect, useCallback } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import React, { useState } from "react";
+import { Card, CardHeader, CardTitle, CardContent, CardFooter } from "@/components/ui/card";
 
-// Duration of the game in seconds
-const GAME_DURATION = 30;
+const BOARD_SIZE = 8;
+const UNIT_TYPES = {
+  archer: { name: "Archer", damage: 2, health: 3, range: 3 },
+  warrior: { name: "Warrior", damage: 3, health: 5, range: 1 },
+  ogre: { name: "Ogre", damage: 5, health: 8, range: 2 },
+};
 
-// Total number of moles on the board
-const MOLE_COUNT = 9;
+function createEmptyBoard(size) {
+  return Array(size)
+    .fill(null)
+    .map(() => Array(size).fill(null));
+}
 
-// Mole component representing a single mole on the board
-const Mole = ({ isActive, onClick }) => (
-  <div
-    className={`w-full h-full rounded-full transition-all duration-200 ${
-      isActive ? "bg-brown-500 scale-110" : "bg-green-600 scale-100"
-    }`}
-    onClick={onClick}
-  >
-    {/* Visual feedback when the mole is active */}
-    {isActive && (
-      <div className="w-full h-full flex items-center justify-center">
-        <div className="w-1/2 h-1/2 bg-black rounded-full"></div>
-      </div>
-    )}
-  </div>
-);
+function calculateDistance(pos1, pos2) {
+  return Math.abs(pos1.x - pos2.x) + Math.abs(pos1.y - pos2.y);
+}
 
-// GameBoard component to render the grid of moles
-const GameBoard = ({ moles, onWhack }) => (
-  <div className="grid grid-cols-3 gap-4 w-full max-w-md mx-auto">
-    {/* Render each mole */}
-    {moles.map((isActive, index) => (
-      <div key={index} className="aspect-square">
-        <Mole isActive={isActive} onClick={() => onWhack(index)} />
-      </div>
-    ))}
-  </div>
-);
+function App() {
+  const [board, setBoard] = useState(createEmptyBoard(BOARD_SIZE));
+  const [currentPlayer, setCurrentPlayer] = useState("Player 1");
+  const [winner, setWinner] = useState(null);
 
-// Main App component managing the game state and rendering the UI
-export default function App() {
-  const [gameState, setGameState] = useState("idle"); // "idle", "playing", or "ended"
-  const [score, setScore] = useState(0); // Player's score
-  const [timeLeft, setTimeLeft] = useState(GAME_DURATION); // Remaining game time
-  const [moles, setMoles] = useState(Array(MOLE_COUNT).fill(false)); // State of all moles (active/inactive)
-
-  // Start a new game
-  const startGame = () => {
-    setGameState("playing");
-    setScore(0);
-    setTimeLeft(GAME_DURATION);
-    setMoles(Array(MOLE_COUNT).fill(false)); // Reset all moles to inactive
+  const handlePlaceUnit = (x, y, unitType) => {
+    if (board[x][y] || winner) return;
+    const newBoard = [...board];
+    newBoard[x][y] = { ...UNIT_TYPES[unitType], owner: currentPlayer };
+    setBoard(newBoard);
   };
 
-  // End the game and reset the board
-  const endGame = useCallback(() => {
-    setGameState("ended");
-    setMoles(Array(MOLE_COUNT).fill(false)); // Clear active moles
-  }, []);
+  const handleEndTurn = () => {
+    const updatedBoard = [...board];
+    let playerPieces = { "Player 1": [], "Player 2": [] };
 
-  // Handle mole clicks
-  const whackMole = (index) => {
-    if (moles[index]) {
-      setScore((prevScore) => prevScore + 1); // Increase score
-      setMoles((prevMoles) => {
-        const newMoles = [...prevMoles];
-        newMoles[index] = false; // Set the mole to inactive after it's hit
-        return newMoles;
-      });
+    // Collect pieces by player
+    board.forEach((row, x) =>
+      row.forEach((cell, y) => {
+        if (cell) {
+          playerPieces[cell.owner].push({ ...cell, position: { x, y } });
+        }
+      })
+    );
+
+    // Resolve battles
+    playerPieces["Player 1"].forEach((piece) => attackClosestEnemy(piece, playerPieces["Player 2"], updatedBoard));
+    playerPieces["Player 2"].forEach((piece) => attackClosestEnemy(piece, playerPieces["Player 1"], updatedBoard));
+
+    // Remove dead units
+    for (let x = 0; x < BOARD_SIZE; x++) {
+      for (let y = 0; y < BOARD_SIZE; y++) {
+        if (updatedBoard[x][y] && updatedBoard[x][y].health <= 0) {
+          updatedBoard[x][y] = null;
+        }
+      }
+    }
+
+    // Check for winner
+    const player1Units = updatedBoard.flat().filter((cell) => cell && cell.owner === "Player 1").length;
+    const player2Units = updatedBoard.flat().filter((cell) => cell && cell.owner === "Player 2").length;
+
+    if (player1Units === 0) setWinner("Player 2");
+    else if (player2Units === 0) setWinner("Player 1");
+
+    setBoard(updatedBoard);
+    setCurrentPlayer((prev) => (prev === "Player 1" ? "Player 2" : "Player 1"));
+  };
+
+  const attackClosestEnemy = (attacker, enemies, boardState) => {
+    let closestEnemy = null;
+    let minDistance = Infinity;
+
+    enemies.forEach((enemy) => {
+      const distance = calculateDistance(attacker.position, enemy.position);
+      if (distance <= attacker.range && distance < minDistance) {
+        closestEnemy = enemy;
+        minDistance = distance;
+      }
+    });
+
+    if (closestEnemy) {
+      const { x, y } = closestEnemy.position;
+      boardState[x][y].health -= attacker.damage;
     }
   };
 
-  // Timer to manage game duration
-  useEffect(() => {
-    if (gameState !== "playing") return;
-
-    const timer = setInterval(() => {
-      setTimeLeft((prevTime) => {
-        if (prevTime <= 1) {
-          clearInterval(timer); // Stop the timer when time runs out
-          endGame();
-          return 0;
-        }
-        return prevTime - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer); // Clean up on unmount or state change
-  }, [gameState, endGame]);
-
-  // Timer to activate and deactivate moles randomly
-  useEffect(() => {
-    if (gameState !== "playing") return;
-
-    const moleTimer = setInterval(() => {
-      setMoles((prevMoles) => {
-        const newMoles = [...prevMoles];
-        const randomIndex = Math.floor(Math.random() * MOLE_COUNT); // Randomly pick a mole
-        newMoles[randomIndex] = true; // Activate the mole
-
-        // Deactivate the mole after 1 second
-        setTimeout(() => {
-          setMoles((prevMoles) => {
-            const newMoles = [...prevMoles];
-            newMoles[randomIndex] = false;
-            return newMoles;
-          });
-        }, 1000);
-
-        return newMoles;
-      });
-    }, 1000);
-
-    return () => clearInterval(moleTimer); // Clean up on unmount or state change
-  }, [gameState]);
-
   return (
-    <div className="min-h-screen bg-green-100 flex items-center justify-center p-4">
-      <Card className="w-full max-w-lg">
+    <div className="min-h-screen flex flex-col items-center bg-gray-100 p-4 sm:p-6">
+      <Card className="w-full max-w-xl">
         <CardHeader>
-          <CardTitle className="text-3xl font-bold text-center">
-            Whack-a-Mole
+          <CardTitle className="text-center text-lg font-semibold">
+            {winner ? `Winner: ${winner}` : `${currentPlayer}'s Turn`}
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-6">
-            {/* Idle state: Show start button */}
-            {gameState === "idle" && (
-              <Button
-                onClick={startGame}
-                className="w-full py-2 text-lg font-semibold"
-              >
-                Start Game
-              </Button>
-            )}
-
-            {/* Playing state: Show the game board and stats */}
-            {gameState === "playing" && (
-              <>
-                <div className="flex justify-between text-lg font-semibold">
-                  <span>Score: {score}</span>
-                  <span>Time: {timeLeft}s</span>
-                </div>
-                <GameBoard moles={moles} onWhack={whackMole} />
-              </>
-            )}
-
-            {/* Ended state: Show game over screen */}
-            {gameState === "ended" && (
-              <div className="text-center space-y-4">
-                <p className="text-2xl font-bold">Game Over!</p>
-                <p className="text-xl">Your score: {score}</p>
-                <Button
-                  onClick={startGame}
-                  className="w-full py-2 text-lg font-semibold"
+          <div className="grid grid-cols-8 gap-1 sm:gap-2">
+            {board.map((row, x) =>
+              row.map((cell, y) => (
+                <div
+                  key={`${x}-${y}`}
+                  className={`w-8 h-8 sm:w-12 sm:h-12 border flex items-center justify-center cursor-pointer ${
+                    cell
+                      ? cell.owner === "Player 1"
+                        ? "bg-blue-300"
+                        : "bg-red-300"
+                      : "bg-gray-200 hover:bg-gray-300"
+                  }`}
+                  onClick={() => handlePlaceUnit(x, y, "archer")}
                 >
-                  Play Again
-                </Button>
-              </div>
+                  {cell && (
+                    <span className="text-xs sm:text-sm font-medium">
+                      {cell.name[0]} ({cell.health})
+                    </span>
+                  )}
+                </div>
+              ))
             )}
           </div>
         </CardContent>
+        <CardFooter className="flex justify-between">
+          <button
+            onClick={() => handlePlaceUnit(Math.floor(Math.random() * BOARD_SIZE), Math.floor(Math.random() * BOARD_SIZE), "warrior")}
+            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          >
+            Add Warrior
+          </button>
+          <button
+            onClick={handleEndTurn}
+            className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+          >
+            End Turn
+          </button>
+        </CardFooter>
       </Card>
     </div>
   );
 }
+
+export default App;
