@@ -1,108 +1,256 @@
 import React, { useState, useEffect } from "react";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
-const icons = [
-  "🍎", "🍌", "🍒", "🍓", "🍊", "🍇", "🍉", "🍋",
-  "🍍", "🥝", "🥑", "🍅", "🍆", "🥕", "🌽", "🥦"
-];
+const ExamForm = ({ onSubmit, initialData }) => {
+  const [exam, setExam] = useState(initialData || { name: "", date: "", duration: "", location: "" });
 
-function shuffleArray(array) {
-  const newArray = [...array, ...array];
-  for (let i = newArray.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
-  }
-  return newArray;
-}
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSubmit(exam);
+    setExam({ name: "", date: "", duration: "", location: "" });
+  };
 
-function MemoryCard({ icon, isFlipped, onClick }) {
   return (
-    <Card
-      className={`w-16 h-16 sm:w-20 sm:h-20 flex items-center justify-center cursor-pointer transition-all duration-300 ${
-        isFlipped ? "bg-white" : "bg-gray-200"
-      }`}
-      onClick={onClick}
-    >
-      <CardContent className="p-0 text-3xl sm:text-4xl">
-        {isFlipped ? icon : "?"}
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <Label htmlFor="name">Exam Name</Label>
+        <Input
+          id="name"
+          value={exam.name}
+          onChange={(e) => setExam({ ...exam, name: e.target.value })}
+          required
+        />
+      </div>
+      <div>
+        <Label htmlFor="date">Date</Label>
+        <Input
+          id="date"
+          type="datetime-local"
+          value={exam.date}
+          onChange={(e) => setExam({ ...exam, date: e.target.value })}
+          required
+        />
+      </div>
+      <div>
+        <Label htmlFor="duration">Duration (hours)</Label>
+        <Input
+          id="duration"
+          type="number"
+          min="1"
+          max="8"
+          value={exam.duration}
+          onChange={(e) => setExam({ ...exam, duration: e.target.value })}
+          required
+        />
+      </div>
+      <div>
+        <Label htmlFor="location">Location</Label>
+        <Input
+          id="location"
+          value={exam.location}
+          onChange={(e) => setExam({ ...exam, location: e.target.value })}
+          required
+        />
+      </div>
+      <Button type="submit">{initialData ? "Update" : "Add"} Exam</Button>
+    </form>
+  );
+};
+
+const ExamList = ({ exams, onEdit, onDelete }) => (
+  <ul className="space-y-2">
+    {exams.map((exam) => (
+      <li key={exam.id} className="flex justify-between items-center bg-gray-100 p-2 rounded">
+        <span>{exam.name} - {new Date(exam.date).toLocaleString()}</span>
+        <div>
+          <Button onClick={() => onEdit(exam)} className="mr-2">Edit</Button>
+          <Button onClick={() => onDelete(exam.id)} variant="destructive">Delete</Button>
+        </div>
+      </li>
+    ))}
+  </ul>
+);
+
+const Timeline = ({ exams }) => {
+  const now = new Date();
+  return (
+    <div className="space-y-4">
+      {exams.map((exam) => {
+        const examDate = new Date(exam.date);
+        const daysUntil = Math.ceil((examDate - now) / (1000 * 60 * 60 * 24));
+        let bgColor = "bg-green-100";
+        if (daysUntil < 0) bgColor = "bg-gray-100";
+        else if (daysUntil < 7) bgColor = "bg-red-100";
+        else if (daysUntil < 30) bgColor = "bg-yellow-100";
+
+        return (
+          <div key={exam.id} className={`flex ${bgColor} p-2 rounded`}>
+            <div className="w-1/3">{examDate.toLocaleString()}</div>
+            <div className="w-2/3">
+              <strong>{exam.name}</strong>
+              <br />
+              Duration: {exam.duration} hours, Location: {exam.location}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const Summary = ({ exams }) => {
+  const totalExams = exams.length;
+  const nearestExam = exams.reduce((nearest, exam) => 
+    new Date(exam.date) < new Date(nearest.date) ? exam : nearest
+  );
+  const uniqueLocations = new Set(exams.map(exam => exam.location)).size;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Summary</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p>Total Exams: {totalExams}</p>
+        <p>Nearest Exam: {nearestExam.name} on {new Date(nearestExam.date).toLocaleDateString()}</p>
+        <p>Unique Locations: {uniqueLocations}</p>
       </CardContent>
     </Card>
   );
-}
+};
 
 export default function App() {
-  const [cards, setCards] = useState([]);
-  const [flippedIndices, setFlippedIndices] = useState([]);
-  const [matchedPairs, setMatchedPairs] = useState([]);
-  const [score, setScore] = useState(0);
-  const [isGameWon, setIsGameWon] = useState(false);
+  const [exams, setExams] = useState([]);
+  const [editingExam, setEditingExam] = useState(null);
+  const [deletedExam, setDeletedExam] = useState(null);
+  const [sortBy, setSortBy] = useState("date");
+  const [filterMonth, setFilterMonth] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
-    startNewGame();
+    const storedExams = JSON.parse(localStorage.getItem("exams") || "[]");
+    setExams(storedExams);
   }, []);
 
-  const startNewGame = () => {
-    setCards(shuffleArray(icons));
-    setFlippedIndices([]);
-    setMatchedPairs([]);
-    setScore(0);
-    setIsGameWon(false);
-  };
+  useEffect(() => {
+    localStorage.setItem("exams", JSON.stringify(exams));
+  }, [exams]);
 
-  const handleCardClick = (index) => {
-    if (flippedIndices.length === 2 || flippedIndices.includes(index) || matchedPairs.includes(index)) {
+  const addExam = (newExam) => {
+    if (exams.some(exam => exam.name === newExam.name && exam.date === newExam.date)) {
+      alert("An exam with this name and date already exists!");
       return;
     }
+    setExams([...exams, { ...newExam, id: Date.now() }]);
+  };
 
-    const newFlippedIndices = [...flippedIndices, index];
-    setFlippedIndices(newFlippedIndices);
+  const updateExam = (updatedExam) => {
+    setExams(exams.map(exam => exam.id === updatedExam.id ? updatedExam : exam));
+    setEditingExam(null);
+  };
 
-    if (newFlippedIndices.length === 2) {
-      const [firstIndex, secondIndex] = newFlippedIndices;
-      if (cards[firstIndex] === cards[secondIndex]) {
-        setMatchedPairs([...matchedPairs, firstIndex, secondIndex]);
-        setScore(score + 1);
-        setFlippedIndices([]);
+  const deleteExam = (id) => {
+    const examToDelete = exams.find(exam => exam.id === id);
+    setDeletedExam(examToDelete);
+    setExams(exams.filter(exam => exam.id !== id));
+  };
 
-        if (matchedPairs.length + 2 === cards.length) {
-          setIsGameWon(true);
-        }
-      } else {
-        setTimeout(() => {
-          setFlippedIndices([]);
-        }, 1000);
-      }
+  const undoDelete = () => {
+    if (deletedExam) {
+      setExams([...exams, deletedExam]);
+      setDeletedExam(null);
     }
   };
 
+  const sortedAndFilteredExams = exams
+    .filter(exam => {
+      const examDate = new Date(exam.date);
+      return (
+        (!filterMonth || (examDate.getMonth() + 1 === parseInt(filterMonth))) &&
+        (exam.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+         exam.location.toLowerCase().includes(searchTerm.toLowerCase()))
+      );
+    })
+    .sort((a, b) => {
+      if (sortBy === "date") return new Date(a.date) - new Date(b.date);
+      return a.name.localeCompare(b.name);
+    });
+
   return (
-    <div className="min-h-screen bg-gray-100 p-4 sm:p-8">
-      <h1 className="text-3xl font-bold text-center mb-4">Memory Game</h1>
-      <div className="flex justify-between items-center mb-4">
-        <p className="text-xl font-semibold">Score: {score}</p>
-        <Button onClick={startNewGame}>New Game</Button>
-      </div>
-      <div className="grid grid-cols-4 sm:grid-cols-8 gap-2 sm:gap-4 max-w-2xl mx-auto">
-        {cards.map((icon, index) => (
-          <MemoryCard
-            key={index}
-            icon={icon}
-            isFlipped={flippedIndices.includes(index) || matchedPairs.includes(index)}
-            onClick={() => handleCardClick(index)}
+    <div className="container mx-auto p-4 sm:p-6 max-w-3xl">
+      <h1 className="text-3xl font-bold mb-6">College Exam Manager</h1>
+      
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>{editingExam ? "Edit Exam" : "Add New Exam"}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ExamForm
+            onSubmit={editingExam ? updateExam : addExam}
+            initialData={editingExam}
           />
-        ))}
+        </CardContent>
+      </Card>
+
+      <div className="mb-4 flex flex-wrap gap-2">
+        <Select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+          <option value="date">Sort by Date</option>
+          <option value="name">Sort by Name</option>
+        </Select>
+        <Select value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)}>
+          <option value="">All Months</option>
+          {[...Array(12)].map((_, i) => (
+            <option key={i} value={i + 1}>
+              {new Date(0, i).toLocaleString('default', { month: 'long' })}
+            </option>
+          ))}
+        </Select>
+        <Input
+          type="text"
+          placeholder="Search exams..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
       </div>
-      {isGameWon && (
-        <Alert className="mt-8 max-w-md mx-auto">
-          <AlertTitle>Congratulations!</AlertTitle>
+
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Exam List</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ExamList
+            exams={sortedAndFilteredExams}
+            onEdit={setEditingExam}
+            onDelete={deleteExam}
+          />
+        </CardContent>
+      </Card>
+
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Exam Timeline</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Timeline exams={sortedAndFilteredExams} />
+        </CardContent>
+      </Card>
+
+      <Summary exams={exams} />
+
+      {deletedExam && (
+        <Alert className="mt-4">
+          <AlertTitle>Exam Deleted</AlertTitle>
           <AlertDescription>
-            You've won the game! Your final score is {score}.
+            You have deleted an exam. 
+            <Button onClick={undoDelete} variant="link" className="p-0 h-auto font-normal">
+              Undo
+            </Button>
           </AlertDescription>
-          <Button className="mt-4" onClick={startNewGame}>
-            Play Again
-          </Button>
         </Alert>
       )}
     </div>

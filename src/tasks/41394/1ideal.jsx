@@ -1,110 +1,214 @@
-import React, { useState, useEffect, useCallback } from "react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import React, { useState, useMemo } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-const icons = [
-  "🍎", "🍌", "🍒", "🍓", "🍊", "🍇", "🍉", "🍋",
-  "🍍", "🥝", "🥑", "🍅", "🍆", "🥕", "🌽", "🥦"
-];
-
-function shuffleArray(array) {
-  let newArray = array.concat(array); // Duplica a array
-  for (let i = newArray.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
-  }
-  return newArray;
-}
-
-function MemoryCard({ icon, isFlipped, onClick }) {
-  return (
-    <Card
-      className={`w-16 h-16 sm:w-20 sm:h-20 flex items-center justify-center cursor-pointer transition-all duration-300 ${
-        isFlipped ? "bg-white" : "bg-gray-200"
-      }`}
-      onClick={onClick}
-    >
-      <CardContent className="p-0 text-3xl sm:text-4xl">
-        {isFlipped ? icon : "?"}
-      </CardContent>
-    </Card>
-  );
-}
+const initialExamState = { name: "", date: "", duration: "", location: "" };
 
 export default function App() {
-  const [cards, setCards] = useState([]);
-  const [flippedIndices, setFlippedIndices] = useState([]);
-  const [matchedPairs, setMatchedPairs] = useState([]);
-  const [score, setScore] = useState(0);
-  const [isGameWon, setIsGameWon] = useState(false);
+  const [exams, setExams] = useState([]);
+  const [form, setForm] = useState(initialExamState);
+  const [filter, setFilter] = useState("");
+  const [sortOption, setSortOption] = useState("date");
+  const [search, setSearch] = useState("");
+  const [undoStack, setUndoStack] = useState([]);
 
-  useEffect(() => {
-    startNewGame();
-  }, []);
-
-  const startNewGame = useCallback(() => {
-    setCards(shuffleArray(icons));
-    setFlippedIndices([]);
-    setMatchedPairs([]);
-    setScore(0);
-    setIsGameWon(false);
-  }, []);
-
-  const handleCardClick = useCallback((index) => {
-    if (flippedIndices.length === 2 || flippedIndices.includes(index) || matchedPairs.includes(index)) {
+  const addExam = () => {
+    if (
+      !form.name ||
+      !form.date ||
+      !form.duration ||
+      !form.location ||
+      exams.some((e) => e.name === form.name)
+    ) {
+      alert("Invalid exam data or duplicate exam name.");
       return;
     }
-
-    const newFlippedIndices = [...flippedIndices, index];
-    setFlippedIndices(newFlippedIndices);
-
-    if (newFlippedIndices.length === 2) {
-      const [firstIndex, secondIndex] = newFlippedIndices;
-      if (cards[firstIndex] === cards[secondIndex]) {
-        const newMatchedPairs = [...matchedPairs, firstIndex, secondIndex];
-        setMatchedPairs(newMatchedPairs);
-        setScore(prevScore => prevScore + 1);
-        setFlippedIndices([]);
-
-        if (newMatchedPairs.length === cards.length) {
-          setIsGameWon(true);
-        }
-      } else {
-        setTimeout(() => {
-          setFlippedIndices([]);
-        }, 1000);
-      }
+    if (form.duration < 1 || form.duration > 8) {
+      alert("Duration must be between 1 and 8 hours.");
+      return;
     }
-  }, [cards, flippedIndices, matchedPairs]);
+    const newExam = { ...form, id: Date.now() };
+    setExams((prev) => [...prev, newExam]);
+    setForm(initialExamState);
+  };
+
+  const deleteExam = (id) => {
+    const toDelete = exams.find((e) => e.id === id);
+    setUndoStack([...undoStack, toDelete]);
+    setExams((prev) => prev.filter((exam) => exam.id !== id));
+  };
+
+  const undoDelete = () => {
+    const lastDeleted = undoStack.pop();
+    if (lastDeleted) {
+      setExams((prev) => [...prev, lastDeleted]);
+      setUndoStack([...undoStack]);
+    }
+  };
+
+  const sortedFilteredExams = useMemo(() => {
+    return exams
+      .filter((exam) => {
+        const date = new Date(exam.date);
+        return (
+          (!filter || date.toISOString().includes(filter)) &&
+          exam.name.toLowerCase().includes(search.toLowerCase())
+        );
+      })
+      .sort((a, b) => {
+        if (sortOption === "date") {
+          return new Date(a.date) - new Date(b.date);
+        }
+        return a.name.localeCompare(b.name);
+      });
+  }, [exams, filter, search, sortOption]);
+
+  const metrics = useMemo(() => {
+    const total = exams.length;
+    const nearestExam = exams.length
+      ? exams.reduce((a, b) =>
+          new Date(a.date) < new Date(b.date) ? a : b
+        )
+      : null;
+    const uniqueLocations = new Set(exams.map((exam) => exam.location)).size;
+    return { total, nearestExam, uniqueLocations };
+  }, [exams]);
 
   return (
-    <div className="min-h-screen bg-gray-100 p-4 sm:p-8">
-      <h1 className="text-3xl font-bold text-center mb-4">Memory Game</h1>
-      <div className="flex justify-between items-center mb-4">
-        <p className="text-xl font-semibold">Score: {score}</p>
-        <Button onClick={startNewGame}>New Game</Button>
+    <div className="p-4 max-w-3xl mx-auto space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>Manage Exams</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <input
+              type="text"
+              placeholder="Exam Name"
+              className="input"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+            />
+            <input
+              type="date"
+              className="input"
+              value={form.date}
+              onChange={(e) => setForm({ ...form, date: e.target.value })}
+            />
+            <input
+              type="number"
+              placeholder="Duration (hours)"
+              className="input"
+              value={form.duration}
+              onChange={(e) =>
+                setForm({ ...form, duration: parseInt(e.target.value, 10) })
+              }
+            />
+            <input
+              type="text"
+              placeholder="Location"
+              className="input"
+              value={form.location}
+              onChange={(e) => setForm({ ...form, location: e.target.value })}
+            />
+          </div>
+          <button className="btn mt-4" onClick={addExam}>
+            Add Exam
+          </button>
+        </CardContent>
+      </Card>
+
+      <div className="flex items-center justify-between">
+        <input
+          type="text"
+          placeholder="Search by name"
+          className="input"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <select
+          className="select"
+          value={sortOption}
+          onChange={(e) => setSortOption(e.target.value)}
+        >
+          <option value="date">Sort by Date</option>
+          <option value="name">Sort by Name</option>
+        </select>
+        <input
+          type="month"
+          className="input"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+        />
       </div>
-      <div className="grid grid-cols-4 sm:grid-cols-8 gap-2 sm:gap-4 max-w-2xl mx-auto">
-        {cards.map((icon, index) => (
-          <MemoryCard
-            key={index}
-            icon={icon}
-            isFlipped={flippedIndices.includes(index) || matchedPairs.includes(index)}
-            onClick={() => handleCardClick(index)}
-          />
-        ))}
-      </div>
-      {isGameWon && (
-        <Alert className="mt-8 max-w-md mx-auto">
-          <AlertTitle>Congratulations!</AlertTitle>
-          <AlertDescription>
-            You've won the game! Your final score is {score}.
-          </AlertDescription>
-          <Button className="mt-4" onClick={startNewGame}>
-            Play Again
-          </Button>
-        </Alert>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Exam List</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {sortedFilteredExams.map((exam) => (
+            <div
+              key={exam.id}
+              className="flex justify-between items-center mb-2 p-2 border rounded"
+            >
+              <div>
+                <p>{exam.name}</p>
+                <p className="text-sm text-gray-500">
+                  {exam.date} • {exam.duration}h • {exam.location}
+                </p>
+              </div>
+              <button
+                className="btn"
+                onClick={() => deleteExam(exam.id)}
+              >
+                Delete
+              </button>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Timeline</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {sortedFilteredExams.map((exam) => (
+            <div key={exam.id} className="flex space-x-4 mb-4">
+              <div className="text-sm font-bold text-gray-600">
+                {new Date(exam.date).toLocaleDateString()}
+              </div>
+              <div>
+                <p>{exam.name}</p>
+                <p className="text-sm text-gray-500">
+                  {exam.duration}h • {exam.location}
+                </p>
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Summary</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p>Total Exams: {metrics.total}</p>
+          <p>
+            Nearest Exam:{" "}
+            {metrics.nearestExam
+              ? `${metrics.nearestExam.name} on ${metrics.nearestExam.date}`
+              : "None"}
+          </p>
+          <p>Unique Locations: {metrics.uniqueLocations}</p>
+        </CardContent>
+      </Card>
+
+      {undoStack.length > 0 && (
+        <button className="btn mt-4" onClick={undoDelete}>
+          Undo Last Delete
+        </button>
       )}
     </div>
   );
